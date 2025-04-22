@@ -1,0 +1,94 @@
+Control-flow features for function: __cxx_global_var_init
+  call void @_ZNSt8ios_base4InitC1Ev(ptr noundef nonnull align 1 dereferenceable(1) @_ZStL8__ioinit): [in_loop: 0, dist_to_branch: 0]
+  %1 = call i32 @__cxa_atexit(ptr @_ZNSt8ios_base4InitD1Ev, ptr @_ZStL8__ioinit, ptr @__dso_handle) #3: [in_loop: 0, dist_to_branch: 0]
+  ret void: [in_loop: 0, dist_to_branch: 0]
+Control-flow features for function: _Z9printListP4Node
+  %2 = alloca ptr, align 8: [in_loop: 0, dist_to_branch: 2]
+  store ptr %0, ptr %2, align 8: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %2 = alloca ptr, align 8, 
+  br label %3: [in_loop: 0, dist_to_branch: 0]
+  %4 = load ptr, ptr %2, align 8: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %2 = alloca ptr, align 8, 
+  %5 = icmp ne ptr %4, null: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %4 = load ptr, ptr %2, align 8, 
+BranchID: 0   br i1 %5, label %6, label %15: [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %5 = icmp ne ptr %4, null, 
+  %7 = load ptr, ptr %2, align 8: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %2 = alloca ptr, align 8, 
+  %8 = getelementptr inbounds %struct.Node, ptr %7, i32 0, i32 0: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %7 = load ptr, ptr %2, align 8, 
+  %9 = load i32, ptr %8, align 8: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %8 = getelementptr inbounds %struct.Node, ptr %7, i32 0, i32 0, 
+  %10 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZNSolsEi(ptr noundef nonnull align 8 dereferenceable(8) @_ZSt4cout, i32 noundef %9): [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %9 = load i32, ptr %8, align 8, 
+  %11 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZStlsISt11char_traitsIcEERSt13basic_ostreamIcT_ES5_PKc(ptr noundef nonnull align 8 dereferenceable(8) %10, ptr noundef @.str): [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %10 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZNSolsEi(ptr noundef nonnull align 8 dereferenceable(8) @_ZSt4cout, i32 noundef %9), 
+  %12 = load ptr, ptr %2, align 8: [in_loop: 1, dist_to_branch: 4]
+  Depends on:   %2 = alloca ptr, align 8, 
+  %13 = getelementptr inbounds %struct.Node, ptr %12, i32 0, i32 1: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %12 = load ptr, ptr %2, align 8, 
+  %14 = load ptr, ptr %13, align 8: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %13 = getelementptr inbounds %struct.Node, ptr %12, i32 0, i32 1, 
+  store ptr %14, ptr %2, align 8: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %2 = alloca ptr, align 8,   %14 = load ptr, ptr %13, align 8, 
+  br label %3, !llvm.loop !6: [in_loop: 1, dist_to_branch: 0]
+  %16 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZNSolsEPFRSoS_E(ptr noundef nonnull align 8 dereferenceable(8) @_ZSt4cout, ptr noundef @_ZSt4endlIcSt11char_traitsIcEERSt13basic_ostreamIT_T0_ES6_): [in_loop: 0, dist_to_branch: 0]
+  ret void: [in_loop: 0, dist_to_branch: 0]
+Control-flow features for function: main
+  %1 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 3]
+  %2 = alloca ptr, align 8: [in_loop: 0, dist_to_branch: 2]
+  store i32 0, ptr %1, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %1 = alloca i32, align 4, 
+  %3 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7: [in_loop: 0, dist_to_branch: 0]
+  %4 = getelementptr inbounds %struct.Node, ptr %3, i32 0, i32 0: [in_loop: 0, dist_to_branch: 5]
+  Depends on:   %3 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store i32 1, ptr %4, align 16: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %4 = getelementptr inbounds %struct.Node, ptr %3, i32 0, i32 0, 
+  %5 = getelementptr inbounds %struct.Node, ptr %3, i32 0, i32 1: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %3 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store ptr null, ptr %5, align 8: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %5 = getelementptr inbounds %struct.Node, ptr %3, i32 0, i32 1, 
+  store ptr %3, ptr %2, align 8: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %2 = alloca ptr, align 8,   %3 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  %6 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7: [in_loop: 0, dist_to_branch: 0]
+  %7 = getelementptr inbounds %struct.Node, ptr %6, i32 0, i32 0: [in_loop: 0, dist_to_branch: 7]
+  Depends on:   %6 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store i32 2, ptr %7, align 16: [in_loop: 0, dist_to_branch: 6]
+  Depends on:   %7 = getelementptr inbounds %struct.Node, ptr %6, i32 0, i32 0, 
+  %8 = getelementptr inbounds %struct.Node, ptr %6, i32 0, i32 1: [in_loop: 0, dist_to_branch: 5]
+  Depends on:   %6 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store ptr null, ptr %8, align 8: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %8 = getelementptr inbounds %struct.Node, ptr %6, i32 0, i32 1, 
+  %9 = load ptr, ptr %2, align 8: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %2 = alloca ptr, align 8, 
+  %10 = getelementptr inbounds %struct.Node, ptr %9, i32 0, i32 1: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %9 = load ptr, ptr %2, align 8, 
+  store ptr %6, ptr %10, align 8: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %6 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7,   %10 = getelementptr inbounds %struct.Node, ptr %9, i32 0, i32 1, 
+  %11 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7: [in_loop: 0, dist_to_branch: 0]
+  %12 = getelementptr inbounds %struct.Node, ptr %11, i32 0, i32 0: [in_loop: 0, dist_to_branch: 10]
+  Depends on:   %11 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store i32 3, ptr %12, align 16: [in_loop: 0, dist_to_branch: 9]
+  Depends on:   %12 = getelementptr inbounds %struct.Node, ptr %11, i32 0, i32 0, 
+  %13 = getelementptr inbounds %struct.Node, ptr %11, i32 0, i32 1: [in_loop: 0, dist_to_branch: 8]
+  Depends on:   %11 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7, 
+  store ptr null, ptr %13, align 8: [in_loop: 0, dist_to_branch: 7]
+  Depends on:   %13 = getelementptr inbounds %struct.Node, ptr %11, i32 0, i32 1, 
+  %14 = load ptr, ptr %2, align 8: [in_loop: 0, dist_to_branch: 6]
+  Depends on:   %2 = alloca ptr, align 8, 
+  %15 = getelementptr inbounds %struct.Node, ptr %14, i32 0, i32 1: [in_loop: 0, dist_to_branch: 5]
+  Depends on:   %14 = load ptr, ptr %2, align 8, 
+  %16 = load ptr, ptr %15, align 8: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %15 = getelementptr inbounds %struct.Node, ptr %14, i32 0, i32 1, 
+  %17 = getelementptr inbounds %struct.Node, ptr %16, i32 0, i32 1: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %16 = load ptr, ptr %15, align 8, 
+  store ptr %11, ptr %17, align 8: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %11 = call noalias noundef nonnull ptr @_Znwm(i64 noundef 16) #7,   %17 = getelementptr inbounds %struct.Node, ptr %16, i32 0, i32 1, 
+  %18 = load ptr, ptr %2, align 8: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %2 = alloca ptr, align 8, 
+  call void @_Z9printListP4Node(ptr noundef %18): [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %18 = load ptr, ptr %2, align 8, 
+  ret i32 0: [in_loop: 0, dist_to_branch: 0]
+Control-flow features for function: _GLOBAL__sub_I_linked_list.cpp
+  call void @__cxx_global_var_init(): [in_loop: 0, dist_to_branch: 0]
+  ret void: [in_loop: 0, dist_to_branch: 0]

@@ -1,0 +1,143 @@
+Control-flow features for function: __cxx_global_var_init
+  call void @_ZNSt8ios_base4InitC1Ev(ptr noundef nonnull align 1 dereferenceable(1) @_ZStL8__ioinit): [in_loop: 0, dist_to_branch: 0]
+  %1 = call i32 @__cxa_atexit(ptr @_ZNSt8ios_base4InitD1Ev, ptr @_ZStL8__ioinit, ptr @__dso_handle) #3: [in_loop: 0, dist_to_branch: 0]
+  ret void: [in_loop: 0, dist_to_branch: 0]
+Control-flow features for function: _Z12binarySearchPiiii
+  %5 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 10]
+  %6 = alloca ptr, align 8: [in_loop: 0, dist_to_branch: 9]
+  %7 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 8]
+  %8 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 7]
+  %9 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 6]
+  %10 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 5]
+  store ptr %0, ptr %6, align 8: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %6 = alloca ptr, align 8, 
+  store i32 %1, ptr %7, align 4: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %7 = alloca i32, align 4, 
+  store i32 %2, ptr %8, align 4: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %8 = alloca i32, align 4, 
+  store i32 %3, ptr %9, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %9 = alloca i32, align 4, 
+  br label %11: [in_loop: 0, dist_to_branch: 0]
+  %12 = load i32, ptr %7, align 4: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %7 = alloca i32, align 4, 
+  %13 = load i32, ptr %8, align 4: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %8 = alloca i32, align 4, 
+  %14 = icmp sle i32 %12, %13: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %12 = load i32, ptr %7, align 4,   %13 = load i32, ptr %8, align 4, 
+BranchID: 0   br i1 %14, label %15, label %46: [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %14 = icmp sle i32 %12, %13, 
+  %16 = load i32, ptr %7, align 4: [in_loop: 1, dist_to_branch: 14]
+  Depends on:   %7 = alloca i32, align 4, 
+  %17 = load i32, ptr %8, align 4: [in_loop: 1, dist_to_branch: 13]
+  Depends on:   %8 = alloca i32, align 4, 
+  %18 = load i32, ptr %7, align 4: [in_loop: 1, dist_to_branch: 12]
+  Depends on:   %7 = alloca i32, align 4, 
+  %19 = sub nsw i32 %17, %18: [in_loop: 1, dist_to_branch: 11]
+  Depends on:   %17 = load i32, ptr %8, align 4,   %18 = load i32, ptr %7, align 4, 
+  %20 = sdiv i32 %19, 2: [in_loop: 1, dist_to_branch: 10]
+  Depends on:   %19 = sub nsw i32 %17, %18, 
+  %21 = add nsw i32 %16, %20: [in_loop: 1, dist_to_branch: 9]
+  Depends on:   %16 = load i32, ptr %7, align 4,   %20 = sdiv i32 %19, 2, 
+  store i32 %21, ptr %10, align 4: [in_loop: 1, dist_to_branch: 8]
+  Depends on:   %10 = alloca i32, align 4,   %21 = add nsw i32 %16, %20, 
+  %22 = load ptr, ptr %6, align 8: [in_loop: 1, dist_to_branch: 7]
+  Depends on:   %6 = alloca ptr, align 8, 
+  %23 = load i32, ptr %10, align 4: [in_loop: 1, dist_to_branch: 6]
+  Depends on:   %10 = alloca i32, align 4, 
+  %24 = sext i32 %23 to i64: [in_loop: 1, dist_to_branch: 5]
+  Depends on:   %23 = load i32, ptr %10, align 4, 
+  %25 = getelementptr inbounds i32, ptr %22, i64 %24: [in_loop: 1, dist_to_branch: 4]
+  Depends on:   %22 = load ptr, ptr %6, align 8,   %24 = sext i32 %23 to i64, 
+  %26 = load i32, ptr %25, align 4: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %25 = getelementptr inbounds i32, ptr %22, i64 %24, 
+  %27 = load i32, ptr %9, align 4: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %9 = alloca i32, align 4, 
+  %28 = icmp eq i32 %26, %27: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %26 = load i32, ptr %25, align 4,   %27 = load i32, ptr %9, align 4, 
+BranchID: 1   br i1 %28, label %29, label %31: [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %28 = icmp eq i32 %26, %27, 
+  %30 = load i32, ptr %10, align 4: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %10 = alloca i32, align 4, 
+  store i32 %30, ptr %5, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %5 = alloca i32, align 4,   %30 = load i32, ptr %10, align 4, 
+  br label %47: [in_loop: 0, dist_to_branch: 0]
+  %32 = load ptr, ptr %6, align 8: [in_loop: 1, dist_to_branch: 7]
+  Depends on:   %6 = alloca ptr, align 8, 
+  %33 = load i32, ptr %10, align 4: [in_loop: 1, dist_to_branch: 6]
+  Depends on:   %10 = alloca i32, align 4, 
+  %34 = sext i32 %33 to i64: [in_loop: 1, dist_to_branch: 5]
+  Depends on:   %33 = load i32, ptr %10, align 4, 
+  %35 = getelementptr inbounds i32, ptr %32, i64 %34: [in_loop: 1, dist_to_branch: 4]
+  Depends on:   %32 = load ptr, ptr %6, align 8,   %34 = sext i32 %33 to i64, 
+  %36 = load i32, ptr %35, align 4: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %35 = getelementptr inbounds i32, ptr %32, i64 %34, 
+  %37 = load i32, ptr %9, align 4: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %9 = alloca i32, align 4, 
+  %38 = icmp slt i32 %36, %37: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %36 = load i32, ptr %35, align 4,   %37 = load i32, ptr %9, align 4, 
+BranchID: 2   br i1 %38, label %39, label %42: [in_loop: 1, dist_to_branch: 0]
+  Depends on:   %38 = icmp slt i32 %36, %37, 
+  %40 = load i32, ptr %10, align 4: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %10 = alloca i32, align 4, 
+  %41 = add nsw i32 %40, 1: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %40 = load i32, ptr %10, align 4, 
+  store i32 %41, ptr %7, align 4: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %7 = alloca i32, align 4,   %41 = add nsw i32 %40, 1, 
+  br label %45: [in_loop: 1, dist_to_branch: 0]
+  %43 = load i32, ptr %10, align 4: [in_loop: 1, dist_to_branch: 3]
+  Depends on:   %10 = alloca i32, align 4, 
+  %44 = sub nsw i32 %43, 1: [in_loop: 1, dist_to_branch: 2]
+  Depends on:   %43 = load i32, ptr %10, align 4, 
+  store i32 %44, ptr %8, align 4: [in_loop: 1, dist_to_branch: 1]
+  Depends on:   %8 = alloca i32, align 4,   %44 = sub nsw i32 %43, 1, 
+  br label %45: [in_loop: 1, dist_to_branch: 0]
+  br label %11, !llvm.loop !6: [in_loop: 1, dist_to_branch: 0]
+  store i32 -1, ptr %5, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %5 = alloca i32, align 4, 
+  br label %47: [in_loop: 0, dist_to_branch: 0]
+  %48 = load i32, ptr %5, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %5 = alloca i32, align 4, 
+  ret i32 %48: [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %48 = load i32, ptr %5, align 4, 
+Control-flow features for function: main
+  %1 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 6]
+  %2 = alloca [5 x i32], align 16: [in_loop: 0, dist_to_branch: 5]
+  %3 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 4]
+  %4 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 3]
+  %5 = alloca i32, align 4: [in_loop: 0, dist_to_branch: 2]
+  store i32 0, ptr %1, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %1 = alloca i32, align 4, 
+  call void @llvm.memcpy.p0.p0.i64(ptr align 16 %2, ptr align 16 @__const.main.arr, i64 20, i1 false): [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %2 = alloca [5 x i32], align 16, 
+  store i32 5, ptr %3, align 4: [in_loop: 0, dist_to_branch: 6]
+  Depends on:   %3 = alloca i32, align 4, 
+  store i32 5, ptr %4, align 4: [in_loop: 0, dist_to_branch: 5]
+  Depends on:   %4 = alloca i32, align 4, 
+  %6 = getelementptr inbounds [5 x i32], ptr %2, i64 0, i64 0: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %2 = alloca [5 x i32], align 16, 
+  %7 = load i32, ptr %3, align 4: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %3 = alloca i32, align 4, 
+  %8 = sub nsw i32 %7, 1: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %7 = load i32, ptr %3, align 4, 
+  %9 = load i32, ptr %4, align 4: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %4 = alloca i32, align 4, 
+  %10 = call noundef i32 @_Z12binarySearchPiiii(ptr noundef %6, i32 noundef 0, i32 noundef %8, i32 noundef %9): [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %6 = getelementptr inbounds [5 x i32], ptr %2, i64 0, i64 0,   %8 = sub nsw i32 %7, 1,   %9 = load i32, ptr %4, align 4, 
+  store i32 %10, ptr %5, align 4: [in_loop: 0, dist_to_branch: 5]
+  Depends on:   %5 = alloca i32, align 4,   %10 = call noundef i32 @_Z12binarySearchPiiii(ptr noundef %6, i32 noundef 0, i32 noundef %8, i32 noundef %9), 
+  %11 = load i32, ptr %5, align 4: [in_loop: 0, dist_to_branch: 4]
+  Depends on:   %5 = alloca i32, align 4, 
+  %12 = icmp ne i32 %11, -1: [in_loop: 0, dist_to_branch: 3]
+  Depends on:   %11 = load i32, ptr %5, align 4, 
+  %13 = zext i1 %12 to i64: [in_loop: 0, dist_to_branch: 2]
+  Depends on:   %12 = icmp ne i32 %11, -1, 
+  %14 = select i1 %12, ptr @.str, ptr @.str.1: [in_loop: 0, dist_to_branch: 1]
+  Depends on:   %12 = icmp ne i32 %11, -1, 
+  %15 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZStlsISt11char_traitsIcEERSt13basic_ostreamIcT_ES5_PKc(ptr noundef nonnull align 8 dereferenceable(8) @_ZSt4cout, ptr noundef %14): [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %14 = select i1 %12, ptr @.str, ptr @.str.1, 
+  %16 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZNSolsEPFRSoS_E(ptr noundef nonnull align 8 dereferenceable(8) %15, ptr noundef @_ZSt4endlIcSt11char_traitsIcEERSt13basic_ostreamIT_T0_ES6_): [in_loop: 0, dist_to_branch: 0]
+  Depends on:   %15 = call noundef nonnull align 8 dereferenceable(8) ptr @_ZStlsISt11char_traitsIcEERSt13basic_ostreamIcT_ES5_PKc(ptr noundef nonnull align 8 dereferenceable(8) @_ZSt4cout, ptr noundef %14), 
+  ret i32 0: [in_loop: 0, dist_to_branch: 0]
+Control-flow features for function: _GLOBAL__sub_I_binary_search.cpp
+  call void @__cxx_global_var_init(): [in_loop: 0, dist_to_branch: 0]
+  ret void: [in_loop: 0, dist_to_branch: 0]
