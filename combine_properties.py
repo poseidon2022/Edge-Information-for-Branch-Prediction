@@ -192,7 +192,7 @@ def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_featur
             corpus_data[base_name] = {"edge_features": edge_features, "branch_mapping": branch_mapping}
         
         for program_name, data in corpus_data.items():
-            f.write(f"\nProgram: {program_name}\n")3
+            f.write(f"\nProgram: {program_name}\n")
             for (src, tgt), feat in data["edge_features"].items():
                 f.write(f"  Edge \"{src}\" -> \"{tgt}\": {feat}\n")
     
