@@ -22,7 +22,7 @@ for ((i = 0; i < TOTAL_FILES; i++)); do
     LLVM_FILE="$LLVM_DIR/${BASE_NAME}.ll"
     PROGRESS=$((i + 1))
     echo "Converting $PROGRESS out of $TOTAL_FILES: $CPP_FILE -> $LLVM_FILE"
-    clang -std=c++17 -S -emit-llvm -O0 "$CPP_FILE" -o "$LLVM_FILE"
+    /usr/local/llvm-10/bin/clang -std=c++17 -S -emit-llvm -O0 "$CPP_FILE" -o "$LLVM_FILE"
 
     if [ $? -ne 0 ]; then
         echo "Conversion failed for $CPP_FILE"
