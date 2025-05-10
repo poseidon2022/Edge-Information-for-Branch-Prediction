@@ -14,10 +14,13 @@ def parse_control_flow(cf_file):
     instr_order = defaultdict(list)  # func_name: [node_id, ...]
     node_to_id = {}  # node_id: instr_id (e.g., main_%8)
     dependencies = defaultdict(set)  # node_id: {dep_node_id}
+    branch_ids = {}  # node_id: BranchID
     current_function = None
     id_to_node = {}  # SSA identifiers for current function
     node_id = 0
     
+    # First pass: Collect branch targets
+    branch_targets = defaultdict(list)  # (func_name, label) -> [node_ids]
     try:
         with open(cf_file, 'r') as f:
             lines = f.readlines()
@@ -28,7 +31,6 @@ def parse_control_flow(cf_file):
                     i += 1
                     continue
                 
-                # Handle function definitions
                 if line.startswith("Control-flow features for function:"):
                     current_function = line.split(":")[1].strip()
                     function_to_head_and_tail[current_function] = [node_id, None]
@@ -42,23 +44,62 @@ def parse_control_flow(cf_file):
                     i += 1
                     continue
                 
-                # Handle labels
-                match_label = re.match(r"(\d+):", line)
-                if match_label:
-                    label = f"%{match_label.group(1)}"
-                    label_to_start[(current_function, label)] = node_id + 1
-                    print(f"Label {label} mapped to node {node_id + 1} in {current_function}")
-                    i += 1
-                    continue
-                
                 # Parse instruction and features
-                match = re.match(r"(.+?)(?:\[in_loop: (\d), dist_to_branch: (\d+)\]|$)", line)
+                match = re.match(r"(?:BranchID: (\d+)\s+)?(.+?)(?:\[in_loop: (\d), dist_to_branch: (\d+)\]|$)", line)
                 if not match:
                     print(f"Warning: Skipping unparseable line: {line}")
                     i += 1
                     continue
                 
-                instr, in_loop, dist = match.groups()
+                branch_id, instr, in_loop, dist = match.groups()
+                instr = instr.strip()
+                if instr.startswith("br "):
+                    targets = re.findall(r"label\s+%(\w+)", instr)
+                    for target in targets:
+                        branch_targets[(current_function, f"%{target}")].append(node_id)
+                
+                i += 1
+            
+            # Second pass: Process instructions and assign labels
+            i = 0
+            node_id = 0
+            current_function = None
+            id_to_node = {}
+            while i < len(lines):
+                line = lines[i].strip()
+                if not line:
+                    i += 1
+                    continue
+                
+                if line.startswith("Control-flow features for function:"):
+                    current_function = line.split(":")[1].strip()
+                    function_to_head_and_tail[current_function] = [node_id, None]
+                    id_to_node = {}
+                    function_scopes[current_function] = id_to_node
+                    i += 1
+                    continue
+                
+                if not current_function:
+                    i += 1
+                    continue
+                
+                # Handle explicit labels
+                match_label = re.match(r"(\d+):", line)
+                if match_label:
+                    label = f"%{match_label.group(1)}"
+                    label_to_start[(current_function, label)] = node_id
+                    print(f"Label {label} mapped to node {node_id} in {current_function}")
+                    i += 1
+                    continue
+                
+                # Parse instruction and features
+                match = re.match(r"(?:BranchID: (\d+)\s+)?(.+?)(?:\[in_loop: (\d), dist_to_branch: (\d+)\]|$)", line)
+                if not match:
+                    print(f"Warning: Skipping unparseable line: {line}")
+                    i += 1
+                    continue
+                
+                branch_id, instr, in_loop, dist = match.groups()
                 instr = instr.strip()
                 in_loop, dist = int(in_loop or 0), int(dist or 0)
                 depth = in_loop
@@ -71,6 +112,10 @@ def parse_control_flow(cf_file):
                 func_map[node_id] = current_function
                 instr_order[current_function].append(node_id)
                 node_to_id[node_id] = f"{current_function}_%instr_{node_id}"
+                
+                if branch_id and instr.startswith("br "):
+                    branch_ids[node_id] = int(branch_id)
+                    print(f"BranchID {branch_id} assigned to node {node_id}")
                 
                 if instr.startswith("ret"):
                     function_to_head_and_tail[current_function][1] = node_id
@@ -95,59 +140,65 @@ def parse_control_flow(cf_file):
                 if i + 1 < len(lines) and "Depends on:" in lines[i + 1]:
                     i += 1
                     dep_line = lines[i].strip()
-                    deps = re.findall(r"(%\w+)", dep_line.split("Depends on:")[1])
+                    deps = [dep.strip() for dep in dep_line.split("Depends on:")[1].split(",") if dep.strip()]
                     for dep in deps:
-                        dep_node = id_to_node.get(dep)
-                        if dep_node is not None:
-                            dependencies[node_id].add(dep_node)
-                            print(f"Dependency: {node_id} -> {dep_node} (for {dep})")
-                        else:
-                            print(f"Warning: Dependency {dep} not found for node {node_id}")
+                        dep_match = re.match(r"(%\w+)", dep)
+                        if dep_match:
+                            dep_id = dep_match.group(1)
+                            dep_node = id_to_node.get(dep_id)
+                            if dep_node is not None and dep_node != node_id:
+                                dependencies[node_id].add(dep_node)
+                                print(f"Dependency: {node_id} -> {dep_node} (for {dep_id})")
+                            else:
+                                print(f"Warning: Dependency {dep_id} not found or self-loop for node {node_id}")
                 
                 node_id += 1
                 i += 1
             
-            # Build memory operations
+            # Assign labels to branch targets
+            for (func_name, label), nodes in branch_targets.items():
+                target_node = min(n for n in instr_text.keys() if n > min(nodes)) if nodes else None
+                if target_node in instr_text and (func_name, label) not in label_to_start:
+                    label_to_start[(func_name, label)] = target_node
+                    print(f"Assigned label {label} to node {target_node} in {func_name}")
+            
+            # Build memory operations (exclude alloca)
             mem_ops = defaultdict(lambda: {'writes': set(), 'reads': set()})
             for nid, instr in instr_text.items():
-                parts = instr.split()
-                for j, part in enumerate(parts):
-                    if part == 'store' and j + 2 < len(parts):
-                        addr_match = re.search(r"ptr %(\d+)", parts[j + 2])
-                        if addr_match:
-                            mem_addr = f"{func_map[nid]}_%{addr_match.group(1)}"
-                            mem_ops[mem_addr]['writes'].add(nid)
-                            print(f"Store to {mem_addr} by node {nid}")
-                    elif part == 'load' and j + 2 < len(parts):
-                        addr_match = re.search(r"ptr %(\d+)", parts[j + 2])
-                        if addr_match:
-                            mem_addr = f"{func_map[nid]}_%{addr_match.group(1)}"
-                            mem_ops[mem_addr]['reads'].add(nid)
-                            print(f"Load from {mem_addr} by node {nid}")
-                    elif part == 'alloca':
-                        write_match = re.search(r"%(\d+)", parts[j - 1]) if j > 0 else None
-                        if write_match:
-                            mem_addr = f"{func_map[nid]}_%{write_match.group(1)}"
-                            mem_ops[mem_addr]['writes'].add(nid)
-                            print(f"Alloc to {mem_addr} by node {nid}")
+                if any(op in instr for op in ['store', 'load']):
+                    parts = instr.split()
+                    for j, part in enumerate(parts):
+                        if part == 'store' and j + 2 < len(parts):
+                            addr_match = re.search(r"ptr %(\d+)", parts[j + 2])
+                            if addr_match:
+                                mem_addr = f"{func_map[nid]}_%{addr_match.group(1)}"
+                                mem_ops[mem_addr]['writes'].add(nid)
+                                print(f"Store to {mem_addr} by node {nid}")
+                        elif part == 'load' and j + 2 < len(parts):
+                            addr_match = re.search(r"ptr %(\d+)", parts[j + 2])
+                            if addr_match:
+                                mem_addr = f"{func_map[nid]}_%{addr_match.group(1)}"
+                                mem_ops[mem_addr]['reads'].add(nid)
+                                print(f"Load from {mem_addr} by node {nid}")
     
     except Exception as e:
         print(f"Error parsing {cf_file}: {e}")
-        return {}, {}, {}, {}, {}, {}, {}, {}, {}
+        return {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
     
     print(f"node_to_id: {node_to_id}")
     print(f"label_to_start: {label_to_start}")
     print(f"function_to_head_and_tail: {function_to_head_and_tail}")
     print(f"mem_ops: {dict(mem_ops)}")
     print(f"dependencies: {dict(dependencies)}")
-    return cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies
+    print(f"branch_ids: {branch_ids}")
+    return cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies, branch_ids
 
 def parse_branch_history(bh_file):
     """Parse branch_history.log for edge-relevant dynamic features."""
     branch_outcomes = defaultdict(list)
     try:
         with open(bh_file, 'r') as f:
-            next(f)
+            next(f)  # Skip header
             for line in f:
                 branch_id, taken = map(int, line.strip().split(','))
                 branch_outcomes[branch_id].append(taken)
@@ -164,14 +215,12 @@ def parse_branch_history(bh_file):
         print(f"Branch {branch_id}: taken_prob={taken_prob}, geo={geo}")
     return history_features
 
-def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, max_dist=100):
-    """Build edge features using generate_xfg logic with branch probabilities and dependencies."""
+def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, branch_ids, max_dist=100):
+    """Build edge features using generate_xfg logic with correct branch probabilities."""
     edge_features = {}
-    branch_counter = 0
-    branch_mapping = {}  # branch_id: node_id
+    branch_mapping = {}
     
-    # Second Pass: Add control and data edges
-    for i in instr_text:
+    for i in sorted(instr_text.keys()):
         instr = instr_text[i]
         if i not in cf_data or not isinstance(instr, str):
             print(f"Warning: Skipping node {i} (instr={instr})")
@@ -183,20 +232,10 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
         dist_to_branch = min(cf_data[i][1] / max_dist, 1.0)
         src_in_loop = cf_data[i][0]
         
-        # Data dependencies: SSA register uses from dependencies
+        # Data dependencies: Only from explicit SSA dependencies
         for dep_node in dependencies[i]:
             edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[dep_node][0], src_in_loop, 1, 4, "DATA-FLOW"]
             print(f"Data edge (dependency): {dep_node} -> {i}")
-        
-        # Data dependencies: SSA register uses from operands
-        operands = re.findall(r"(%\w+)", instr)
-        if node_function and operands:
-            id_to_node = function_scopes.get(node_function, {})
-            for op in operands:
-                if op in id_to_node and id_to_node[op] != i and id_to_node[op] not in dependencies[i]:
-                    tgt_node = id_to_node[op]
-                    edge_features[(tgt_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[tgt_node][0], src_in_loop, 1, 4, "DATA-FLOW"]
-                    print(f"Data edge (SSA): {tgt_node} -> {i}")
         
         # Control flow: Sequential edges
         if i > 0 and i-1 in instr_text and isinstance(instr_text[i-1], str) and not instr_text[i-1].startswith(("br ", "ret ")) and "= call" not in instr_text[i-1]:
@@ -209,20 +248,19 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
         
         # Control flow: Branch edges
         if instr.startswith("br ") and node_function:
-            branch_id = branch_counter
+            branch_id = branch_ids.get(i, -1)
             branch_mapping[branch_id] = i
-            branch_counter += 1
             targets = re.findall(r"label\s+%(\w+)", instr)
             history = bh_data.get(branch_id, [0.0, 0.0, 0.0, 0.0])
-            print(f"Branch mapping: branch_id={branch_id}, node={i}, history={history}")
+            print(f"Branch mapping: branch_id={branch_id}, node={i}, history={history}, targets={targets}")
             for idx, target in enumerate(targets):
                 target_label = f"%{target}"
                 if (node_function, target_label) in label_to_start:
                     tgt_node = label_to_start[(node_function, target_label)]
                     edge_type = 1 if idx == 0 and len(targets) == 2 else 2 if idx == 1 else 3
-                    geo = [h if edge_type == 1 else 1.0 - h for h in history[1:]] if len(targets) == 2 else [0.0, 0.0, 0.0]
+                    geo = history[1:] if idx == 0 and len(targets) == 2 else [1.0 - h for h in history[1:]] if idx == 1 and len(targets) == 2 else [0.0, 0.0, 0.0]
                     edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(tgt_node, [0, 0, 0, 0, 0])[0], 0, edge_type, "CONTROL-FLOW"]
-                    print(f"Branch edge: {i} -> {tgt_node}, edge_type={edge_type}, geo={geo}")
+                    print(f"Branch edge: {i} -> {tgt_node}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(tgt_node, 'Unknown')}")
                 else:
                     print(f"Warning: Target label {target_label} not found in {node_function}")
         
@@ -241,41 +279,18 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                             edge_features[(tail, i + 1)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8, "CONTROL-FLOW"]
                             print(f"Return edge: {tail} -> {i + 1}")
     
-    # Memory dependencies
-    for mem_addr, ops in mem_ops.items():
-        # RAW: alloca -> store
-        for alloc_id in ops['writes']:
-            if 'alloca' not in instr_text.get(alloc_id, ""):
-                continue
-            dist_to_branch_dep = min(cf_data[alloc_id][1] / max_dist, 1.0)
-            src_in_loop_dep = cf_data[alloc_id][0]
+        # Memory dependencies: Only RAW (store -> load)
+        for mem_addr, ops in mem_ops.items():
             for store_id in ops['writes']:
-                if 'store' not in instr_text.get(store_id, "") or store_id == alloc_id:
+                if 'store' not in instr_text.get(store_id, ""):
                     continue
-                edge_features[(alloc_id, store_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[store_id][0], 1, 4, "DATA-FLOW"]
-                print(f"Memory edge (RAW, alloca->store): {alloc_id} -> {store_id}, mem_addr={mem_addr}")
-        
-        # RAW: store -> load
-        for store_id in ops['writes']:
-            if 'store' not in instr_text.get(store_id, ""):
-                continue
-            dist_to_branch_dep = min(cf_data[store_id][1] / max_dist, 1.0)
-            src_in_loop_dep = cf_data[store_id][0]
-            for load_id in ops['reads']:
-                if load_id == store_id:
-                    continue
-                edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4, "DATA-FLOW"]
-                print(f"Memory edge (RAW, store->load): {store_id} -> {load_id}, mem_addr={mem_addr}")
-        
-        # WAR: load -> store
-        for load_id in ops['reads']:
-            dist_to_branch_dep = min(cf_data[load_id][1] / max_dist, 1.0)
-            src_in_loop_dep = cf_data[load_id][0]
-            for store_id in ops['writes']:
-                if 'store' not in instr_text.get(store_id, "") or store_id == load_id:
-                    continue
-                edge_features[(load_id, store_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[store_id][0], 2, 5, "DATA-FLOW"]
-                print(f"Memory edge (WAR): {load_id} -> {store_id}, mem_addr={mem_addr}")
+                dist_to_branch_dep = min(cf_data[store_id][1] / max_dist, 1.0)
+                src_in_loop_dep = cf_data[store_id][0]
+                for load_id in ops['reads']:
+                    if load_id == store_id:
+                        continue
+                    edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4, "DATA-FLOW"]
+                    print(f"Memory edge (RAW, store->load): {store_id} -> {load_id}, mem_addr={mem_addr}")
     
     return edge_features, branch_mapping
 
@@ -295,7 +310,7 @@ def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_featur
                 f.write(f"Warning: Missing files for {base_name}, skipping\n")
                 continue
             
-            cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies = parse_control_flow(cf_file)
+            cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies, branch_ids = parse_control_flow(cf_file)
             if not cf_data:
                 f.write(f"Warning: No data parsed for {base_name}, skipping\n")
                 continue
@@ -303,7 +318,7 @@ def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_featur
             bh_data = parse_branch_history(bh_file)
             
             edge_features, branch_mapping = build_edge_features(
-                cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, max_dist=100
+                cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, branch_ids, max_dist=100
             )
             
             corpus_data[base_name] = {

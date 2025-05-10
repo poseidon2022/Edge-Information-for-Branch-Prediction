@@ -4,6 +4,7 @@
 IR_DIR="dsa/dsa/llvm"
 
 OUTPUT_DIR="control_flow_features"
+LLVM_DIR="/usr/local/llvm-10"
 
 # Create the output directory if it doesn't exist (moved to top)
 if [ ! -d "$OUTPUT_DIR" ]; then
@@ -17,10 +18,11 @@ fi
 
 # Compile the shared object once
 echo "Compiling ControlFlowExtractor.so..."
-clang -std=c++17 -fPIC -shared -o ControlFlowExtractor.so ControlFlowExtractor.cpp \
-    $(llvm-config --cxxflags --ldflags --libs core analysis passes support) \
-    -I/usr/lib/llvm-15/include \
-    -Wl,-rpath,$(llvm-config --libdir)
+$LLVM_DIR/bin/clang++ -std=c++17 -fPIC -shared -o ControlFlowExtractor.so ControlFlowExtractor.cpp \
+    $(/usr/local/llvm-10/bin/llvm-config --cxxflags --ldflags) \
+    -I/usr/local/llvm-10/include \
+    -L/usr/local/llvm-10/lib \
+    -Wl,-rpath,/usr/local/llvm-10/lib
 
 if [ $? -ne 0 ]; then
     echo "Compilation of ControlFlowExtractor.so failed"
@@ -50,10 +52,9 @@ for ((i = 0; i < TOTAL_FILES; i++)); do
     echo "Processing $PROGRESS out of $TOTAL_FILES: $IR_FILE -> $OUTPUT_FILE"
 
     # Run opt with the plugin
-    opt -load-pass-plugin=./ControlFlowExtractor.so \
-        -passes="control-flow-extractor" \
-        -opaque-pointers "$IR_FILE" \
-        -o /dev/null 2> "$OUTPUT_FILE"
+    $LLVM_DIR/bin/opt -load-pass-plugin=./ControlFlowExtractor.so \
+        -passes=control-flow-extractor \
+        "$IR_FILE" -o /dev/null 2> "$OUTPUT_FILE"
 
     if [ $? -ne 0 ]; then
         echo "Opt execution failed for $IR_FILE"
