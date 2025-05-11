@@ -215,7 +215,7 @@ def parse_branch_history(bh_file):
     return history_features
 
 def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, branch_ids, max_dist=100):
-    """Build edge features ensuring branches connect to correct instructions."""
+    """Build edge features ensuring branches and returns connect to correct instructions."""
     edge_features = {}
     branch_mapping = {}
     processed_branches = set()
@@ -237,20 +237,20 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
         
         # Data dependencies
         for dep_node in dependencies[i]:
-            edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[dep_node][0], src_in_loop, 1, 4, "DATA-FLOW"]
+            edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[dep_node][0], src_in_loop, 1, 4]
             print(f"Data edge (dependency): {dep_node} -> {i}")
         
-        # Sequential edges (skip if current or previous node is a branch or label)
+        # Sequential edges
         if i > 0 and i-1 in instr_text and isinstance(instr_text[i-1], str):
             prev_instr = instr_text[i-1]
-            if (not instr.startswith(("br ", "ret ")) and
-                not prev_instr.startswith(("br ", "ret ")) and
-                "= call" not in prev_instr and
-                not re.match(r"(\w+|<unnamed_\d+>):", prev_instr)):
+            # Allow sequential edges to unconditional branches, but not conditional branches or returns
+            is_unconditional_branch = instr.startswith("br label ")
+            is_valid_prev = not (prev_instr.startswith(("br i1 ", "ret ")) or "= call" in prev_instr or re.match(r"(\w+|<unnamed_\d+>):", prev_instr))
+            if is_valid_prev and not (instr.startswith(("br i1 ", "ret ")) and not is_unconditional_branch):
                 prev_function = func_map.get(i-1)
                 if node_function == prev_function:
-                    edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[i-1][0], src_in_loop, 0, 0, "CONTROL-FLOW"]
-                    print(f"Sequential edge: {i-1} -> {i}")
+                    edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[i-1][0], src_in_loop, 0, 0]
+                    print(f"Sequential edge: {i-1} -> {i} (prev={prev_instr}, curr={instr})")
         
         # Branch edges
         if instr.startswith("br "):
@@ -270,7 +270,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 if (node_function, target_label) in label_to_start:
                     tgt_node = label_to_start[(node_function, target_label)]
                     if tgt_node in instr_text:
-                        edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(tgt_node, [0, 0, 0, 0, 0])[0], 0, edge_type, "CONTROL-FLOW"]
+                        edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(tgt_node, [0, 0, 0, 0, 0])[0], 0, edge_type]
                         print(f"Branch edge: {i} -> {tgt_node}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(tgt_node, 'Unknown')}")
                     else:
                         print(f"ERROR: Branch edge to {tgt_node} invalid (not in instr_text)")
@@ -298,7 +298,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                             break
                         start_idx += 1
                     if potential_tgt is not None and func_map.get(potential_tgt) == node_function:
-                        edge_features[(i, potential_tgt)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0])[0], 0, edge_type, "CONTROL-FLOW"]
+                        edge_features[(i, potential_tgt)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0])[0], 0, edge_type]
                         print(f"Fallback branch edge: {i} -> {potential_tgt}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(potential_tgt, 'Unknown')}")
                     else:
                         print(f"ERROR: No valid fallback target for branch at node {i}, target {target_label}")
@@ -309,14 +309,18 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
             called_function = match_call.group(1)
             if called_function in function_to_head_and_tail:
                 head, tail = function_to_head_and_tail[called_function]
-                edge_features[(i, head)] = [dist_to_branch, 0.0, 0.0, 0.0, src_in_loop, cf_data.get(head, [0, 0, 0, 0, 0])[0], 0, 7, "CONTROL-FLOW"]
-                print(f"Call edge: {i} -> {head}")
+                edge_features[(i, head)] = [dist_to_branch, 0.0, 0.0, 0.0, src_in_loop, cf_data.get(head, [0, 0, 0, 0, 0])[0], 0, 7]
+                print(f"Call edge: {i} -> {head} (call to {called_function})")
                 next_i = i + 1
-                while next_i in instr_text and (instr_text[next_i].startswith(("br ", "ret ")) or re.match(r"(\w+|<unnamed_\d+>):", instr_text[next_i])):
+                while next_i in instr_text and (re.match(r"(\w+|<unnamed_\d+>):", instr_text[next_i]) or instr_text[next_i].startswith("ret ")):
                     next_i += 1
-                if next_i in instr_text and func_map.get(next_i) == node_function:
-                    edge_features[(tail, next_i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8, "CONTROL-FLOW"]
-                    print(f"Return edge: {tail} -> {next_i}")
+                if (next_i in instr_text and 
+                    func_map.get(next_i) == node_function and 
+                    not instr_text[next_i].startswith("ret ")):
+                    edge_features[(tail, next_i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8]
+                    print(f"Return edge: {tail} -> {next_i} (from {called_function} in {func_map.get(tail)} to {instr_text[next_i]} in {func_map.get(next_i)})")
+                else:
+                    print(f"Warning: Skipping invalid return edge from {tail} (func={func_map.get(tail)}) to {next_i} (func={func_map.get(next_i, 'None')}, instr={instr_text.get(next_i, 'None')})")
     
         # Memory dependencies
         for mem_addr, ops in mem_ops.items():
@@ -328,7 +332,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 for load_id in ops['reads']:
                     if load_id == store_id:
                         continue
-                    edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4, "DATA-FLOW"]
+                    edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4]
                     print(f"Memory edge (RAW, store->load): {store_id} -> {load_id}, mem_addr={mem_addr}")
     
     return edge_features, branch_mapping
