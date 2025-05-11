@@ -2,9 +2,10 @@ import os
 import re
 import glob
 from collections import defaultdict
+import uuid
 
 def parse_control_flow(cf_file):
-    """Parse control_flow_features.txt with flexible label parsing to match generate_xfg."""
+    """Parse control_flow_features.txt with robust label parsing."""
     cf_data = {}  # node_id: [in_loop, dist, loop_depth, cond_type, opcode_cat]
     instr_text = {}  # node_id: instruction text
     label_to_start = {}  # (func_name, label) -> node_id
@@ -18,6 +19,7 @@ def parse_control_flow(cf_file):
     current_function = None
     id_to_node = {}  # SSA identifiers for current function
     node_id = 0
+    pending_labels = defaultdict(list)  # (func_name, label) -> [branch_node_id, idx, is_non_taken]
     
     try:
         with open(cf_file, 'r') as f:
@@ -30,6 +32,7 @@ def parse_control_flow(cf_file):
                     i += 1
                     continue
                 
+                # Handle function definition
                 if line.startswith("Control-flow features for function:"):
                     current_function = line.split(":")[1].strip()
                     function_to_head_and_tail[current_function] = [node_id, None]
@@ -44,13 +47,14 @@ def parse_control_flow(cf_file):
                     i += 1
                     continue
                 
-                # Handle explicit labels (e.g., 30:, %30:, 30, label 30)
-                match_label = re.match(r"(?:%)?(\w+)(?::|$)", line)
+                # Handle labels (e.g., "30:", "18:")
+                match_label = re.match(r"(\w+|<unnamed_\d+>):$", line)
                 if match_label and not line.startswith(("BranchID:", "Depends on:")):
-                    label = f"%{match_label.group(1)}"
-                    label_to_start[(current_function, label)] = node_id + 1
-                    print(f"Label {label} mapped to node {node_id + 1} in {current_function} (label at node={node_id})")
-                    node_id += 1
+                    label = match_label.group(1)
+                    if not label.startswith("<unnamed"):
+                        label = f"%{label}"
+                    label_to_start[(current_function, label)] = node_id
+                    print(f"Label {label} mapped to node {node_id} in {current_function} (line={i})")
                     i += 1
                     continue
                 
@@ -78,15 +82,22 @@ def parse_control_flow(cf_file):
                 if branch_id and instr.startswith("br "):
                     branch_ids[node_id] = int(branch_id)
                     print(f"BranchID {branch_id} assigned to node {node_id} for instr: {instr}")
+                    # Collect branch targets
+                    targets = re.findall(r"label\s+%(\w+)", instr)
+                    for idx, target in enumerate(targets):
+                        target_label = f"%{target}"
+                        if (current_function, target_label) in label_to_start:
+                            print(f"Found label {target_label} -> node {label_to_start[(current_function, target_label)]}")
+                        else:
+                            is_non_taken = (is_branch and idx == 1)
+                            pending_labels[(current_function, target_label)].append((node_id, idx, is_non_taken))
+                            print(f"Pending label {target_label} for branch at node {node_id}, idx={idx}, is_non_taken={is_non_taken}")
                 
                 if instr.startswith("ret"):
                     function_to_head_and_tail[current_function][1] = node_id
                     print(f"Function {current_function} tail set to {node_id}")
                     current_function = None
                     id_to_node = {}
-                    node_id += 1
-                    i += 1
-                    continue
                 
                 # Identify SSA identifiers
                 match_ssa = re.match(r"(%\w+)\s*=\s*\w+\s+.*", instr)
@@ -117,7 +128,39 @@ def parse_control_flow(cf_file):
                 node_id += 1
                 i += 1
             
-            # Build memory operations (exclude alloca)
+            # Resolve pending labels
+            for (func_name, label), branches in pending_labels.items():
+                if (func_name, label) in label_to_start:
+                    tgt_node = label_to_start[(func_name, label)]
+                    for branch_node, idx, is_non_taken in branches:
+                        print(f"Resolved pending label {label} -> node {tgt_node} for branch at node {branch_node}")
+                    continue
+                for branch_node, idx, is_non_taken in branches:
+                    func_nodes = instr_order[func_name]
+                    branch_idx = func_nodes.index(branch_node) if branch_node in func_nodes else -1
+                    if branch_idx == -1:
+                        print(f"Warning: Branch node {branch_node} not found in {func_name} instr_order")
+                        continue
+                    potential_node = None
+                    if is_non_taken:
+                        for j in range(branch_idx + 1, len(func_nodes)):
+                            candidate = func_nodes[j]
+                            if not (instr_text[candidate].startswith(("br ", "ret ")) or re.match(r"(\w+|<unnamed_\d+>):", instr_text[candidate])):
+                                potential_node = candidate
+                                break
+                    else:
+                        for j in range(branch_idx + 1, len(func_nodes)):
+                            candidate = func_nodes[j]
+                            if not re.match(r"(\w+|<unnamed_\d+>):", instr_text[candidate]):
+                                potential_node = candidate
+                                break
+                    if potential_node is not None:
+                        label_to_start[(func_name, label)] = potential_node
+                        print(f"Inferred label {label} mapped to node {potential_node} for branch at node {branch_node}, idx={idx}, is_non_taken={is_non_taken}")
+                    else:
+                        print(f"Warning: Could not infer label {label} for branch at node {branch_node}, idx={idx}, is_non_taken={is_non_taken}")
+            
+            # Build memory operations
             mem_ops = defaultdict(lambda: {'writes': set(), 'reads': set()})
             for nid, instr in instr_text.items():
                 if any(op in instr for op in ['store', 'load']):
@@ -141,11 +184,12 @@ def parse_control_flow(cf_file):
         return {}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}
     
     print(f"node_to_id: {node_to_id}")
-    print(f"label_to_start: {label_to_start}")
+    print(f"label_to_start: {dict(label_to_start)}")
     print(f"function_to_head_and_tail: {function_to_head_and_tail}")
     print(f"mem_ops: {dict(mem_ops)}")
     print(f"dependencies: {dict(dependencies)}")
     print(f"branch_ids: {branch_ids}")
+    print(f"instr_order: {dict(instr_order)}")
     return cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies, branch_ids
 
 def parse_branch_history(bh_file):
@@ -171,17 +215,17 @@ def parse_branch_history(bh_file):
     return history_features
 
 def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, bh_data, dependencies, branch_ids, max_dist=100):
-    """Build edge features ensuring branches connect to first instructions after labels."""
+    """Build edge features ensuring branches connect to correct instructions."""
     edge_features = {}
     branch_mapping = {}
-    processed_branches = set()  # Track processed branch nodes
+    processed_branches = set()
     
     for i in sorted(instr_text.keys()):
         instr = instr_text[i]
         if i not in cf_data or not isinstance(instr, str):
             print(f"Warning: Skipping node {i} (instr={instr})")
             continue
-        if re.match(r"\d+:\s*;.*", instr) or instr.startswith("define"):
+        if re.match(r"(\w+|<unnamed_\d+>):", instr):
             continue
         
         node_function = func_map.get(i)
@@ -191,27 +235,29 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
         dist_to_branch = min(cf_data[i][1] / max_dist, 1.0)
         src_in_loop = cf_data[i][0]
         
-        # Data dependencies: Only from explicit SSA dependencies
+        # Data dependencies
         for dep_node in dependencies[i]:
             edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[dep_node][0], src_in_loop, 1, 4, "DATA-FLOW"]
             print(f"Data edge (dependency): {dep_node} -> {i}")
         
-        # Control flow: Sequential edges
-        if i > 0 and i-1 in instr_text and isinstance(instr_text[i-1], str) and not instr_text[i-1].startswith(("br ", "ret ")) and "= call" not in instr_text[i-1]:
-            if re.match(r"\d+:\s*;.*", instr_text[i-1]) or instr_text[i-1].startswith("define"):
-                continue
-            prev_function = func_map.get(i-1)
-            if node_function == prev_function:
-                edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[i-1][0], src_in_loop, 0, 0, "CONTROL-FLOW"]
-                print(f"Sequential edge: {i-1} -> {i}")
+        # Sequential edges (skip if current or previous node is a branch or label)
+        if i > 0 and i-1 in instr_text and isinstance(instr_text[i-1], str):
+            prev_instr = instr_text[i-1]
+            if (not instr.startswith(("br ", "ret ")) and
+                not prev_instr.startswith(("br ", "ret ")) and
+                "= call" not in prev_instr and
+                not re.match(r"(\w+|<unnamed_\d+>):", prev_instr)):
+                prev_function = func_map.get(i-1)
+                if node_function == prev_function:
+                    edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[i-1][0], src_in_loop, 0, 0, "CONTROL-FLOW"]
+                    print(f"Sequential edge: {i-1} -> {i}")
         
-        # Control flow: Branch edges
+        # Branch edges
         if instr.startswith("br "):
             processed_branches.add(i)
             branch_id = branch_ids.get(i, -1)
             branch_mapping[branch_id] = i
-            # Handle various label formats: label %30, label 30, label % 30
-            targets = re.findall(r"label\s+(?:%?\s*|\s*%?\s*)(\w+)", instr)
+            targets = re.findall(r"label\s+%(\w+)", instr)
             is_conditional = "br i1" in instr
             history = bh_data.get(branch_id, [0.0, 0.0, 0.0, 0.0]) if branch_id != -1 else [0.0, 0.0, 0.0, 0.0]
             print(f"Processing branch: node={i}, branch_id={branch_id}, instr={instr}, history={history}, targets={targets}, conditional={is_conditional}")
@@ -219,26 +265,45 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 print(f"ERROR: No targets found for branch at node {i}: {instr}")
             for idx, target in enumerate(targets):
                 target_label = f"%{target}"
+                edge_type = 1 if idx == 0 and is_conditional else 2 if idx == 1 and is_conditional else 3
+                geo = history[1:] if idx == 0 and is_conditional else [1.0 - h for h in history[1:]] if idx == 1 and is_conditional else history[1:] if branch_id != -1 else [0.0, 0.0, 0.0]
                 if (node_function, target_label) in label_to_start:
                     tgt_node = label_to_start[(node_function, target_label)]
                     if tgt_node in instr_text:
-                        edge_type = 1 if idx == 0 and is_conditional else 2 if idx == 1 and is_conditional else 3
-                        geo = history[1:] if idx == 0 and is_conditional else [1.0 - h for h in history[1:]] if idx == 1 and is_conditional else history[1:] if branch_id != -1 else [0.0, 0.0, 0.0]
                         edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(tgt_node, [0, 0, 0, 0, 0])[0], 0, edge_type, "CONTROL-FLOW"]
                         print(f"Branch edge: {i} -> {tgt_node}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(tgt_node, 'Unknown')}")
                     else:
                         print(f"ERROR: Branch edge to {tgt_node} invalid (not in instr_text)")
                 else:
-                    print(f"ERROR: Target label {target_label} not found in {node_function} for branch at node {i}. Available labels: {[(k[1], v) for k in label_to_start if k[0] == node_function]}")
-                    # Fallback: Try next sequential node
-                    potential_tgt = i + 1
-                    while potential_tgt in instr_text and instr_text[potential_tgt].startswith(("br ", "ret ")):
-                        potential_tgt += 1
-                    if potential_tgt in instr_text and func_map.get(potential_tgt) == node_function:
-                        edge_features[(i, potential_tgt)] = [dist_to_branch, *([0.0, 0.0, 0.0] if branch_id == -1 else history[1:]), src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0])[0], 0, 3, "CONTROL-FLOW"]
-                        print(f"Fallback branch edge: {i} -> {potential_tgt}, instr={instr} -> {instr_text.get(potential_tgt, 'Unknown')}")
+                    print(f"Warning: Target label {target_label} not found in {node_function} for branch at node {i}. Available labels: {[(k[1], v) for k in label_to_start if k[0] == node_function]}")
+                    func_nodes = instr_order[node_function]
+                    branch_idx = func_nodes.index(i) if i in func_nodes else -1
+                    if branch_idx == -1:
+                        print(f"ERROR: Branch node {i} not found in {node_function} instr_order")
+                        continue
+                    potential_tgt = None
+                    start_idx = branch_idx + 1
+                    while start_idx < len(func_nodes):
+                        candidate = func_nodes[start_idx]
+                        candidate_instr = instr_text.get(candidate, "")
+                        if re.match(r"(\w+|<unnamed_\d+>):", candidate_instr):
+                            start_idx += 1
+                            continue
+                        if is_conditional and idx == 1:
+                            if not candidate_instr.startswith(("br ", "ret ")):
+                                potential_tgt = candidate
+                                break
+                        else:
+                            potential_tgt = candidate
+                            break
+                        start_idx += 1
+                    if potential_tgt is not None and func_map.get(potential_tgt) == node_function:
+                        edge_features[(i, potential_tgt)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0])[0], 0, edge_type, "CONTROL-FLOW"]
+                        print(f"Fallback branch edge: {i} -> {potential_tgt}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(potential_tgt, 'Unknown')}")
+                    else:
+                        print(f"ERROR: No valid fallback target for branch at node {i}, target {target_label}")
         
-        # Control flow: Call edges
+        # Call edges
         match_call = re.match(r".*call.*@(\w+)", instr)
         if match_call and node_function:
             called_function = match_call.group(1)
@@ -246,14 +311,14 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 head, tail = function_to_head_and_tail[called_function]
                 edge_features[(i, head)] = [dist_to_branch, 0.0, 0.0, 0.0, src_in_loop, cf_data.get(head, [0, 0, 0, 0, 0])[0], 0, 7, "CONTROL-FLOW"]
                 print(f"Call edge: {i} -> {head}")
-                if tail is not None and i + 1 in instr_text and isinstance(instr_text[i + 1], str) and not instr_text[i + 1].startswith(("define", "ret ")):
-                    if not re.match(r"\d+:\s*;.*", instr_text[i + 1]):
-                        next_function = func_map.get(i + 1)
-                        if node_function == next_function:
-                            edge_features[(tail, i + 1)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8, "CONTROL-FLOW"]
-                            print(f"Return edge: {tail} -> {i + 1}")
+                next_i = i + 1
+                while next_i in instr_text and (instr_text[next_i].startswith(("br ", "ret ")) or re.match(r"(\w+|<unnamed_\d+>):", instr_text[next_i])):
+                    next_i += 1
+                if next_i in instr_text and func_map.get(next_i) == node_function:
+                    edge_features[(tail, next_i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8, "CONTROL-FLOW"]
+                    print(f"Return edge: {tail} -> {next_i}")
     
-        # Memory dependencies: Only RAW (store -> load)
+        # Memory dependencies
         for mem_addr, ops in mem_ops.items():
             for store_id in ops['writes']:
                 if 'store' not in instr_text.get(store_id, ""):
@@ -265,11 +330,6 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                         continue
                     edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4, "DATA-FLOW"]
                     print(f"Memory edge (RAW, store->load): {store_id} -> {load_id}, mem_addr={mem_addr}")
-    
-    # Check for skipped branches
-    for i in instr_text:
-        if instr_text[i].startswith("br ") and i not in processed_branches:
-            print(f"ERROR: Branch skipped at node {i}: {instr_text[i]}")
     
     return edge_features, branch_mapping
 

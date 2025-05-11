@@ -6,6 +6,7 @@
 #include "llvm/Support/raw_ostream.h"
 #include <map>
 #include <queue>
+#include <string>
 
 using namespace llvm;
 
@@ -14,7 +15,7 @@ using namespace llvm;
     - Marks instructions in loops using LoopInfo.
     - Computes distances to the nearest branch for GNN message passing.
     - Assigns BranchIDs to conditional branches.
-    - Includes basic block labels for CFG reconstruction.
+    - Outputs basic block labels for CFG reconstruction.
     - Outputs features to errs() for redirection to a file.
 */
 
@@ -23,78 +24,77 @@ namespace {
     std::map<Instruction*, std::pair<int, int>> Features; // [in_loop, dist_to_branch]
     std::map<Instruction*, uint64_t> BranchIDs; // Branch instruction -> ID
     std::map<Instruction*, std::set<Instruction*>> DataDependencies;
-    std::vector<std::vector<bool>> BranchTraces; // NEW: Store branch outcomes
+    std::map<BasicBlock*, std::string> BlockLabels; // Basic block -> label
     uint64_t BranchCounter = 0; // Static counter for branch IDs
-    // std::map<BasicBlock*, std::string> BlockLabels;
 
     PreservedAnalyses run(Function &F, FunctionAnalysisManager &FAM) {
-      // inferBlockLabels(F); // generate block labels
+      inferBlockLabels(F); // Generate block labels
       LoopInfo &LI = FAM.getResult<LoopAnalysis>(F);
       for (Loop *L : LI) {
         markInstructionsInLoop(L);
       }
       computeDistanceToBranch(F);
-      assignBranchIDs(F); // New step
-      computeDataDependencies(F); // New step
+      assignBranchIDs(F);
+      computeDataDependencies(F);
       printFeatures(F);
       return PreservedAnalyses::all();
     }
 
-    // void inferBlockLabels(Function &F) {
-    //     unsigned unnamedCounter = 0;
+    void inferBlockLabels(Function &F) {
+      unsigned unnamedCounter = 0;
 
-    //     // First pass: initialize with unnamed labels
-    //     for (BasicBlock &BB : F) {
-    //         BlockLabels[&BB] = "<unnamed_" + std::to_string(unnamedCounter++) + ">";
-    //     }
+      // Initialize all blocks with unnamed labels
+      for (BasicBlock &BB : F) {
+        BlockLabels[&BB] = "<unnamed_" + std::to_string(unnamedCounter++) + ">";
+      }
 
-    //     // Second pass: assign explicit IR labels from branches
-    //     for (BasicBlock &BB : F) {
-    //         if (BranchInst *BI = dyn_cast<BranchInst>(BB.getTerminator())) {
-    //             std::string instrStr;
-    //             raw_string_ostream(instrStr) << *BI;
-    //             for (unsigned i = 0; i < BI->getNumSuccessors(); i++) {
-    //                 BasicBlock *Succ = BI->getSuccessor(i);
-    //                 std::string label = getLabelFromBranch(instrStr, i);
-    //                 if (!label.empty()) {
-    //                     BlockLabels[Succ] = label;  // Override with exact label (e.g., "11")
-    //                 }
-    //             }
-    //         }
-    //     }
+      // Assign explicit labels from branch instructions
+      for (BasicBlock &BB : F) {
+        if (BranchInst *BI = dyn_cast<BranchInst>(BB.getTerminator())) {
+          std::string instrStr;
+          raw_string_ostream(instrStr) << *BI;
+          for (unsigned i = 0; i < BI->getNumSuccessors(); i++) {
+            BasicBlock *Succ = BI->getSuccessor(i);
+            std::string label = getLabelFromBranch(instrStr, i);
+            if (!label.empty()) {
+              BlockLabels[Succ] = label; // e.g., "30", "40"
+            }
+          }
+        }
+      }
 
-    //     // Third pass: use BB.getName() as fallback if not set by branches
-    //     for (BasicBlock &BB : F) {
-    //         std::string name = BB.getName().str();
-    //         if (!name.empty() && name != "0" && BlockLabels[&BB].find("<unnamed") == 0) {
-    //             BlockLabels[&BB] = name;
-    //         }
-    //     }
+      // Use BB.getName() as fallback for non-branch-assigned labels
+      for (BasicBlock &BB : F) {
+        std::string name = BB.getName().str();
+        if (!name.empty() && name != "0" && BlockLabels[&BB].find("<unnamed") != std::string::npos) {
+          BlockLabels[&BB] = name;
+        }
+      }
 
-    //     // Debug: print assignments
-    //     for (BasicBlock &BB : F) {
-    //         errs() << "BB: " << BlockLabels[&BB] << " starts with " << *BB.begin() << "\n";
-    //     }
-    // }
+      // Debug: Print label assignments
+      for (BasicBlock &BB : F) {
+        errs() << "BB: " << BlockLabels[&BB] << " starts with " << *BB.begin() << "\n";
+      }
+    }
 
-    // std::string getLabelFromBranch(const std::string &instr, unsigned succIdx) {
-    //     size_t labelPos = instr.find("label");
-    //     if (labelPos == std::string::npos) return "";
-    //     std::vector<std::string> labels;
-    //     size_t pos = labelPos;
-    //     while (pos != std::string::npos) {
-    //         pos = instr.find("label", pos + 1);
-    //         if (pos != std::string::npos) {
-    //             size_t start = pos + 6; // Skip "label "
-    //             size_t end = instr.find_first_of(", \n", start);
-    //             if (end == std::string::npos) end = instr.length();
-    //             std::string label = instr.substr(start, end - start);
-    //             if (label[0] == '%') label = label.substr(1);  // Remove %
-    //             labels.push_back(label);
-    //         }
-    //     }
-    //     return (succIdx < labels.size()) ? labels[succIdx] : "";
-    // }
+    std::string getLabelFromBranch(const std::string &instr, unsigned succIdx) {
+      size_t pos = 0;
+      std::vector<std::string> labels;
+      while (true) {
+        pos = instr.find("label %", pos);
+        if (pos == std::string::npos) break;
+        pos += 7; // Skip "label %"
+        size_t end = instr.find_first_of(", \n", pos);
+        if (end == std::string::npos) end = instr.length();
+        std::string label = instr.substr(pos, end - pos);
+        if (!label.empty()) {
+          labels.push_back(label);
+        }
+        pos = end;
+      }
+      return (succIdx < labels.size()) ? labels[succIdx] : "";
+    }
+
     void markInstructionsInLoop(Loop *L) {
       for (BasicBlock *BB : L->blocks()) {
         for (Instruction &I : *BB) {
@@ -146,29 +146,27 @@ namespace {
         }
       }
 
-      // Assign distances to instructions based on CFG and intra-block position
+      // Assign distances to instructions
       for (BasicBlock &BB : F) {
         int BB_Dist = BlockDistances[&BB];
-        int IntraBlockDist = BB_Dist; // Start with block distance
+        int IntraBlockDist = BB_Dist;
 
-        // Traverse instructions in reverse to compute distance to terminator
         for (auto It = BB.rbegin(); It != BB.rend(); ++It) {
           Instruction &I = *It;
           if (isa<BranchInst>(&I) || isa<CallInst>(&I) || isa<ReturnInst>(&I)) {
-            Features[&I].second = 0; // Control-flow instructions get 0
-            IntraBlockDist = 1; // Reset distance for prior instructions
+            Features[&I].second = 0;
+            IntraBlockDist = 1;
           } else {
             Features[&I].second = IntraBlockDist;
             if (IntraBlockDist < MAX_DISTANCE) {
-              IntraBlockDist++; // Increment distance as we move away
+              IntraBlockDist++;
             }
           }
         }
 
-        // If block has no control-flow terminator, use block distance
         if (IntraBlockDist == BB_Dist) {
           for (Instruction &I : BB) {
-            if (!Features[&I].second) { // If not yet set
+            if (!Features[&I].second) {
               Features[&I].second = BB_Dist;
             }
           }
@@ -191,7 +189,6 @@ namespace {
         for (Instruction &I : BB) {
           for (Use &U : I.operands()) {
             if (Instruction *Dep = dyn_cast<Instruction>(U.get())) {
-              // Only include if Dep is in the same function
               if (Dep->getParent()->getParent() == &F) {
                 DataDependencies[&I].insert(Dep);
               }
@@ -204,23 +201,29 @@ namespace {
     void printFeatures(Function &F) {
       errs() << "Control-flow features for function: " << F.getName() << "\n";
       for (BasicBlock &BB : F) {
+        // Print block label before first instruction
+        errs() << BlockLabels[&BB] << ":\n";
         for (Instruction &I : BB) {
           auto [inLoop, dist] = Features[&I];
           if (BranchIDs.count(&I)) {
-            errs() << "BranchID: " << BranchIDs[&I] << " ";
+            errs() << "BranchID: " << BranchIDs[&I] << "   ";
           }
           errs() << I << ": [in_loop: " << inLoop 
                  << ", dist_to_branch: " << dist << "]\n";
           if (!DataDependencies[&I].empty()) {
-            errs() << "  Depends on: ";
+            errs() << "  Depends on:   ";
+            bool first = true;
             for (Instruction *Dep : DataDependencies[&I]) {
-              errs() << *Dep << ", ";
+              if (!first) errs() << ", ";
+              errs() << *Dep;
+              first = false;
             }
             errs() << "\n";
           }
         }
       }
     }
+
     static bool isRequired() { return true; }
   };
 }
