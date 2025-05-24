@@ -59,21 +59,31 @@ def parse_control_flow(cf_file):
                     continue
                 
                 # Parse instruction and features
-                match = re.match(r"(?:BranchID: (\d+)\s+)?(.+?)(?:\[in_loop: (\d), dist_to_branch: (\d+)\]|$)", line)
+                match = re.match(r"(?:BranchID:\s*(\d+)\s+)?(.+?)(?:\s*\[(?:in_loop:\s*(\d+),\s*dist_to_control_flow:\s*(\d+),\s*num_preds_BB:\s*(\d+),\s*num_succs_BB:\s*(\d+),\s*loop_depth_BB:\s*(\d+),\s*op_is_mem_access:\s*(\d+),\s*op_is_reg_operand:\s*(\d+),\s*op_is_immediate:\s*(\d+),\s*num_operands:\s*(\d+)\s*)\]|$)", line)
                 if not match:
                     print(f"Warning: Skipping unparseable line {i}: {line}")
                     i += 1
                     continue
                 
-                branch_id, instr, in_loop, dist = match.groups()
+                branch_id, instr, in_loop, distance_to_control_flow, num_preds_BB, num_succs_BB, loop_depth_BB, op_is_mem_access, op_is_reg_operand, op_is_immediate, num_operands = match.groups()
                 instr = instr.strip()
-                in_loop, dist = int(in_loop or 0), int(dist or 0)
-                depth = in_loop
+
+                in_loop = int(in_loop or 0)
+                distance_to_control_flow = int(distance_to_control_flow or 0)
+                num_preds_BB = int(num_preds_BB or 0)
+                num_succs_BB = int(num_succs_BB or 0)
+                loop_depth_BB = int(loop_depth_BB or 0)
+                op_is_mem_access =  int(op_is_mem_access or 0)
+                op_is_reg_operand = int(op_is_reg_operand or 0)
+                op_is_immediate = int(op_is_immediate or 0)
+                num_operands = int(num_operands or 0)
+
+                print("=============================HERE")
                 is_branch = "br i1" in instr
                 opcode_cat = 0 if any(op in instr for op in ["add", "sub", "mul"]) else 1 if "store" in instr or "load" in instr else 2 if "br" in instr else 3
                 cond_type = 1 if is_branch else 0
                 
-                cf_data[node_id] = [in_loop, dist, depth, cond_type, opcode_cat]
+                cf_data[node_id] = [in_loop, distance_to_control_flow, loop_depth_BB, num_preds_BB, num_succs_BB, op_is_mem_access, op_is_reg_operand, op_is_immediate, num_operands, cond_type, opcode_cat]
                 instr_text[node_id] = instr
                 func_map[node_id] = current_function
                 instr_order[current_function].append(node_id)
@@ -107,7 +117,7 @@ def parse_control_flow(cf_file):
                     node_to_id[node_id] = f"{current_function}_{ssa_id}"
                     print(f"SSA {ssa_id} defined at node {node_id} in {current_function}")
                 
-                print(f"Parsed: node={node_id}, instr_id={node_to_id[node_id]}, instr={instr}, features=[in_loop: {in_loop}, dist: {dist}]")
+                print(f"Parsed: node={node_id}, instr_id={node_to_id[node_id]}, instr={instr}, features=[in_loop: {in_loop}, dist: {distance_to_control_flow}]")
                 
                 # Handle dependencies
                 if i + 1 < len(lines) and "Depends on:" in lines[i + 1]:
@@ -237,7 +247,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
         
         # Data dependencies
         for dep_node in dependencies[i]:
-            edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[dep_node][0], src_in_loop, 1, 4]
+            edge_features[(dep_node, i)] = [dist_to_branch, 0.0, 0.0, 0.0, *cf_data[dep_node][2:10] ,cf_data[dep_node][0], src_in_loop, 1, 4]
             print(f"Data edge (dependency): {dep_node} -> {i}")
         
         # Sequential edges
@@ -249,7 +259,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
             if is_valid_prev and not (instr.startswith(("br i1 ", "ret ")) and not is_unconditional_branch):
                 prev_function = func_map.get(i-1)
                 if node_function == prev_function:
-                    edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data[i-1][0], src_in_loop, 0, 0]
+                    edge_features[(i-1, i)] = [dist_to_branch, 0.0, 0.0, 0.0, *cf_data[i-1][2:10], cf_data[i-1][0], src_in_loop, 0, 0]
                     print(f"Sequential edge: {i-1} -> {i} (prev={prev_instr}, curr={instr})")
         
         # Branch edges
@@ -270,7 +280,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 if (node_function, target_label) in label_to_start:
                     tgt_node = label_to_start[(node_function, target_label)]
                     if tgt_node in instr_text:
-                        edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(tgt_node, [0, 0, 0, 0, 0])[0], 0, edge_type]
+                        edge_features[(i, tgt_node)] = [dist_to_branch, *geo, src_in_loop, *cf_data.get(tgt_node, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[2:10], cf_data.get(tgt_node, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[2], 0, edge_type]
                         print(f"Branch edge: {i} -> {tgt_node}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(tgt_node, 'Unknown')}")
                     else:
                         print(f"ERROR: Branch edge to {tgt_node} invalid (not in instr_text)")
@@ -298,7 +308,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                             break
                         start_idx += 1
                     if potential_tgt is not None and func_map.get(potential_tgt) == node_function:
-                        edge_features[(i, potential_tgt)] = [dist_to_branch, *geo, src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0])[0], 0, edge_type]
+                        edge_features[(i, potential_tgt)] = [dist_to_branch, *geo, *cf_data.get(potential_tgt, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[2:10], src_in_loop, cf_data.get(potential_tgt, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[0], 0, edge_type]
                         print(f"Fallback branch edge: {i} -> {potential_tgt}, edge_type={edge_type}, geo={geo}, instr={instr} -> {instr_text.get(potential_tgt, 'Unknown')}")
                     else:
                         print(f"ERROR: No valid fallback target for branch at node {i}, target {target_label}")
@@ -309,7 +319,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
             called_function = match_call.group(1)
             if called_function in function_to_head_and_tail:
                 head, tail = function_to_head_and_tail[called_function]
-                edge_features[(i, head)] = [dist_to_branch, 0.0, 0.0, 0.0, src_in_loop, cf_data.get(head, [0, 0, 0, 0, 0])[0], 0, 7]
+                edge_features[(i, head)] = [dist_to_branch, 0.0, 0.0, 0.0,*cf_data.get(head, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[2:10], src_in_loop, cf_data.get(head, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[0], 0, 7]
                 print(f"Call edge: {i} -> {head} (call to {called_function})")
                 next_i = i + 1
                 while next_i in instr_text and (re.match(r"(\w+|<unnamed_\d+>):", instr_text[next_i]) or instr_text[next_i].startswith("ret ")):
@@ -317,7 +327,7 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 if (next_i in instr_text and 
                     func_map.get(next_i) == node_function and 
                     not instr_text[next_i].startswith("ret ")):
-                    edge_features[(tail, next_i)] = [dist_to_branch, 0.0, 0.0, 0.0, cf_data.get(tail, [0, 0, 0, 0, 0])[0], src_in_loop, 0, 8]
+                    edge_features[(tail, next_i)] = [dist_to_branch, 0.0, 0.0, 0.0, *cf_data.get(tail, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[2:10], cf_data.get(tail, [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])[0], src_in_loop, 0, 8]
                     print(f"Return edge: {tail} -> {next_i} (from {called_function} in {func_map.get(tail)} to {instr_text[next_i]} in {func_map.get(next_i)})")
                 else:
                     print(f"Warning: Skipping invalid return edge from {tail} (func={func_map.get(tail)}) to {next_i} (func={func_map.get(next_i, 'None')}, instr={instr_text.get(next_i, 'None')})")
@@ -332,30 +342,34 @@ def build_edge_features(cf_data, instr_text, label_to_start, function_to_head_an
                 for load_id in ops['reads']:
                     if load_id == store_id:
                         continue
-                    edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, src_in_loop_dep, cf_data[load_id][0], 1, 4]
+                    edge_features[(store_id, load_id)] = [dist_to_branch_dep, 0.0, 0.0, 0.0, *cf_data[store_id][2:10], src_in_loop_dep, cf_data[load_id][0], 1, 4]
                     print(f"Memory edge (RAW, store->load): {store_id} -> {load_id}, mem_addr={mem_addr}")
     
     return edge_features, branch_mapping
 
-def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_features", bh_dir="branch_history_logs", output_file="edge_features.txt"):
+def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_features", bh_dir="branch_history_logs", output_dir="edge_features"):
     corpus_data = {}
     
+    # Create output directory if it doesn't exist
+    os.makedirs(output_dir, exist_ok=True)
+    
     ll_files = glob.glob(f"{ll_dir}/*.ll")
-    with open(output_file, 'w') as f:
-        f.write(f"Found {len(ll_files)} LLVM IR files to process\n")
+    with open(os.path.join(output_dir, "processing_log.txt"), 'w') as log_f:
+        log_f.write(f"Found {len(ll_files)} LLVM IR files to process\n")
         for i, ll_file in enumerate(ll_files):
             base_name = os.path.basename(ll_file).replace('.ll', '')
             cf_file = f"{cf_dir}/{base_name}_control_flow_features.txt"
             bh_file = f"{bh_dir}/{base_name}_branch_history.log"
+            output_file = os.path.join(output_dir, f"{base_name}_edge_features.txt")
             
-            f.write(f"Processing {i+1}/{len(ll_files)}: {base_name}\n")
+            log_f.write(f"Processing {i+1}/{len(ll_files)}: {base_name}\n")
             if not os.path.exists(cf_file) or not os.path.exists(bh_file):
-                f.write(f"Warning: Missing files for {base_name}, skipping\n")
+                log_f.write(f"Warning: Missing files for {base_name}, skipping\n")
                 continue
             
             cf_data, instr_text, label_to_start, function_to_head_and_tail, function_scopes, func_map, instr_order, node_to_id, mem_ops, dependencies, branch_ids = parse_control_flow(cf_file)
             if not cf_data:
-                f.write(f"Warning: No data parsed for {base_name}, skipping\n")
+                log_f.write(f"Warning: No data parsed for {base_name}, skipping\n")
                 continue
             
             bh_data = parse_branch_history(bh_file)
@@ -370,18 +384,19 @@ def merge_features_for_corpus(ll_dir="dsa/dsa/llvm", cf_dir="control_flow_featur
                 "instr_text": instr_text,
                 "branch_mapping": branch_mapping
             }
-        
-        for program_name, data in corpus_data.items():
-            f.write(f"\nProgram: {program_name}\n")
-            if not data["edge_features"]:
-                f.write("  No edges generated\n")
-            for (src_node, tgt_node), feat in sorted(data["edge_features"].items()):
-                src_instr = data["instr_text"].get(src_node, "Unknown")
-                tgt_instr = data["instr_text"].get(tgt_node, "Unknown")
-                f.write(f"  Edge {src_node} -> {tgt_node} (\"{src_instr}\" -> \"{tgt_instr}\"): {feat}\n")
+            
+            # Write edge features to program-specific file
+            with open(output_file, 'w') as f:
+                if not edge_features:
+                    f.write("  No edges generated\n")
+                for (src_node, tgt_node), feat in sorted(edge_features.items()):
+                    src_instr = instr_text.get(src_node, "Unknown")
+                    tgt_instr = instr_text.get(tgt_node, "Unknown")
+                    f.write(f"  Edge {src_node} -> {tgt_node} (\"{src_instr}\" -> \"{tgt_instr}\"): {feat}\n")
     
-    with open(output_file, 'r') as f:
-        print(f.read())
+    # Print the processing log
+    with open(os.path.join(output_dir, "processing_log.txt"), 'r') as log_f:
+        print(log_f.read())
     
     return corpus_data
 
